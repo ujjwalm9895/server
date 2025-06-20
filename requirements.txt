@@ -1,7 +1,5 @@
 fastapi
 uvicorn[standard]
-websockets
-faster-whisper
-torch
-numpy
-scipy
+openai
+python-multipart
+aiofiles
