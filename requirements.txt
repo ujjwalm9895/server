@@ -1,5 +1,8 @@
 fastapi
-uvicorn[standard]
+uvicorn
+websockets
 openai
-python-multipart
+faster-whisper
+pydub
 aiofiles
+python-multipart
