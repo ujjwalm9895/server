@@ -1,7 +1,7 @@
 from faster_whisper import WhisperModel
 
-# Load once when the server starts
-model = WhisperModel("tiny.en", compute_type="float32")  # Use "base" or "tiny" for small servers
+# Load once at startup
+model = WhisperModel("base.en", compute_type="int8")  # Change to "tiny.en" if needed
 
 def transcribe_file(path: str):
     segments, info = model.transcribe(path)

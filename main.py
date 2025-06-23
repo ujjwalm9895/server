@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from faster_whisper import WhisperModel
 import tempfile
 from typing import Dict
+from utils.whisper_utils import transcribe_file
 
 app = FastAPI()
 
@@ -38,12 +39,16 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
         connected_users.pop(username, None)
 
 # Transcription Endpoint
+# Transcription Endpoint
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=True) as tmp:
-        tmp.write(await file.read())
-        tmp.flush()
-        segments, _ = model.transcribe(tmp.name)
-        text = " ".join([s.text.strip() for s in segments])
-        print(f"[TRANSCRIBED] {text}")
-        return {"text": text}
+    try:
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as tmp:
+            tmp.write(await file.read())
+            tmp.flush()
+            segments, info = transcribe_file(tmp.name)
+            text = " ".join([seg.text.strip() for seg in segments])
+            print(f"[TRANSCRIBED] {text}")
+            return {"text": text}
+    except Exception as e:
+        return {"error": str(e)}
