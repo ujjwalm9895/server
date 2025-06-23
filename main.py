@@ -1,65 +1,50 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, List
-from utils.whisper_utils import transcribe_audio
-from utils.dalle_utils import generate_image
-from utils.memory_utils import save_transcript, get_followups
-
-import json
-import io
+from typing import Dict
 
 app = FastAPI()
 
-# CORS setup
+# Allow requests from any frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Replace with your frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Store active WebSocket connections with usernames as keys
 active_connections: Dict[str, WebSocket] = {}
 
+# WebSocket route for signaling
 @app.websocket("/ws/{username}")
 async def signaling(websocket: WebSocket, username: str):
     await websocket.accept()
     active_connections[username] = websocket
+    print(f"✅ {username} connected. Active users: {list(active_connections.keys())}")
+
     try:
         while True:
             data = await websocket.receive_text()
+            # Optionally parse the JSON to check the type of signal
             for user, conn in active_connections.items():
                 if user != username:
-                    await conn.send_text(data)
+                    try:
+                        await conn.send_text(data)
+                    except Exception as e:
+                        print(f"❌ Failed to send to {user}: {e}")
     except WebSocketDisconnect:
+        # Remove user on disconnect
+        print(f"❌ {username} disconnected.")
         active_connections.pop(username, None)
 
-@app.websocket("/ws-ai")
-async def ai_socket(websocket: WebSocket):
-    await websocket.accept()
-    buffer = io.BytesIO()
-    full_transcript = []
-
-    try:
-        while True:
-            audio_chunk = await websocket.receive_bytes()
-            buffer.write(audio_chunk)
-
-            if buffer.tell() > 16000 * 10:  # ~10 sec
-                buffer.seek(0)
-                audio_bytes = buffer.read()
-                buffer = io.BytesIO()
-
-                text = transcribe_audio(audio_bytes)
-                full_transcript.append(text)
-
-                image_url = generate_image(text)
-
-                await websocket.send_json({"image_url": image_url})
-    except WebSocketDisconnect:
-        save_transcript("temp_user", full_transcript)
-
-@app.get("/followup/{username}")
-async def followup(username: str):
-    ideas = get_followups(username)
-    return {"suggestion": ideas}
+        # Notify other users that this user has disconnected
+        disconnect_notice = {
+            "type": "user_disconnected",
+            "username": username
+        }
+        for user, conn in active_connections.items():
+            try:
+                await conn.send_text(json.dumps(disconnect_notice))
+            except:
+                continue

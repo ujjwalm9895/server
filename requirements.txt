@@ -6,3 +6,8 @@ faster-whisper
 pydub
 aiofiles
 python-multipart
+chromadb
+sentence-transformers
+transformers
+torch
+diffusers
