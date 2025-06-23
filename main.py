@@ -1,61 +1,44 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict
-import numpy as np
+from utils.whisper_utils import transcribe_file
 import tempfile
-import soundfile as sf
-from faster_whisper import WhisperModel
-import json
 
 app = FastAPI()
 
-# Allow requests from any frontend
+# Allow CORS (required for frontend on different origin)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with your frontend URL in production
+    allow_origins=["*"],  # Or restrict to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Store active WebSocket connections with usernames as keys
-active_connections: Dict[str, WebSocket] = {}
+# In-memory connected users (username → WebSocket)
+connected_users = {}
 
-# WebSocket route for signaling
 @app.websocket("/ws/{username}")
-async def signaling(websocket: WebSocket, username: str):
+async def websocket_endpoint(websocket: WebSocket, username: str):
     await websocket.accept()
-    active_connections[username] = websocket
-    print(f"✅ {username} connected. Active users: {list(active_connections.keys())}")
+    connected_users[username] = websocket
+    await broadcast({"type": "user_connected", "username": username}, exclude=username)
 
     try:
         while True:
             data = await websocket.receive_text()
-            # Optionally parse the JSON to check the type of signal
-            for user, conn in active_connections.items():
-                if user != username:
-                    try:
-                        await conn.send_text(data)
-                    except Exception as e:
-                        print(f"❌ Failed to send to {user}: {e}")
+            for_send = data
+            for key, ws in connected_users.items():
+                if key != username:
+                    await ws.send_text(for_send)
     except WebSocketDisconnect:
-        # Remove user on disconnect
-        print(f"❌ {username} disconnected.")
-        active_connections.pop(username, None)
-
-        # Notify other users that this user has disconnected
-        disconnect_notice = {
-            "type": "user_disconnected",
-            "username": username
-        }
-        for user, conn in active_connections.items():
-            try:
-                await conn.send_text(json.dumps(disconnect_notice))
-            except:
-                continue
+        del connected_users[username]
+        await broadcast({"type": "user_disconnected", "username": username}, exclude=username)
 
 
-model = WhisperModel("tiny", compute_type="int8")
+async def broadcast(message: dict, exclude: str = None):
+    for user, ws in connected_users.items():
+        if user != exclude:
+            await ws.send_json(message)
 
 
 @app.post("/transcribe")
@@ -63,7 +46,7 @@ async def transcribe(file: UploadFile = File(...)):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
         tmp.write(await file.read())
         tmp.flush()
-        segments, _ = model.transcribe(tmp.name)
+        segments, _ = transcribe_file(tmp.name)
         text = " ".join([s.text.strip() for s in segments])
         print(f"[TRANSCRIBED] {text}")
         return {"text": text}
