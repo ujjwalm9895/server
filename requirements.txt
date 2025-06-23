@@ -3,3 +3,4 @@ uvicorn
 faster-whisper
 ffmpeg-python
 websockets
+python-multipart
