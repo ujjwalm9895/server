@@ -1,3 +1,5 @@
+import json
+from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from utils.whisper_utils import transcribe_file
@@ -15,30 +17,46 @@ app.add_middleware(
 )
 
 # In-memory connected users (username → WebSocket)
-connected_users = {}
+connected_users: Dict[str, WebSocket] = {}
 
 @app.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str):
     await websocket.accept()
     connected_users[username] = websocket
-    await broadcast({"type": "user_connected", "username": username}, exclude=username)
+    print(f"[CONNECTED] {username}")
+
+    # Notify others about new connection
+    for user, ws in connected_users.items():
+        if user != username:
+            try:
+                await ws.send_json({"type": "user_connected", "username": username})
+            except:
+                pass  # Avoid breaking others
 
     try:
         while True:
             data = await websocket.receive_text()
-            for_send = data
-            for key, ws in connected_users.items():
-                if key != username:
-                    await ws.send_text(for_send)
+            print(f"[MESSAGE] From {username}: {data}")
+            message = json.loads(data)
+
+            # Route message to intended recipient
+            to_user = message.get("to")
+            if to_user in connected_users:
+                await connected_users[to_user].send_text(data)
+            else:
+                print(f"[WARN] {to_user} is not connected")
+
     except WebSocketDisconnect:
-        del connected_users[username]
-        await broadcast({"type": "user_disconnected", "username": username}, exclude=username)
+        print(f"[DISCONNECTED] {username}")
+    finally:
+        connected_users.pop(username, None)
 
-
-async def broadcast(message: dict, exclude: str = None):
-    for user, ws in connected_users.items():
-        if user != exclude:
-            await ws.send_json(message)
+        # Notify others about disconnection
+        for user, ws in connected_users.items():
+            try:
+                await ws.send_json({"type": "user_disconnected", "username": username})
+            except:
+                pass
 
 
 @app.post("/transcribe")
