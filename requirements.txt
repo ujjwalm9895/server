@@ -1,13 +1,6 @@
 fastapi
 uvicorn
-websockets
-openai
+numpy
+soundfile
 faster-whisper
-pydub
-aiofiles
-python-multipart
-chromadb
-sentence-transformers
-transformers
-torch
-diffusers
+websockets

@@ -1,6 +1,11 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict
+import numpy as np
+import tempfile
+import soundfile as sf
+from faster_whisper import WhisperModel
+import json
 
 app = FastAPI()
 
@@ -48,3 +53,17 @@ async def signaling(websocket: WebSocket, username: str):
                 await conn.send_text(json.dumps(disconnect_notice))
             except:
                 continue
+
+
+model = WhisperModel("tiny", compute_type="int8")
+
+
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+        tmp.write(await file.read())
+        tmp.flush()
+        segments, _ = model.transcribe(tmp.name)
+        text = " ".join([s.text.strip() for s in segments])
+        print(f"[TRANSCRIBED] {text}")
+        return {"text": text}
