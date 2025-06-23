@@ -1,28 +1,23 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from faster_whisper import WhisperModel
-import tempfile
-from typing import Dict
 from utils.whisper_utils import transcribe_file
+import tempfile, ffmpeg, os
+from typing import Dict
 
 app = FastAPI()
 
-# Enable CORS for frontend
+# CORS: allow frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, use your domain only
+    allow_origins=["*"],  # In production, restrict this
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Store connected users for WebSocket signaling
+# Connected users for WebSocket
 connected_users: Dict[str, WebSocket] = {}
 
-# Load the Whisper model
-model = WhisperModel("base.en", compute_type="int8")  # You can use "tiny", "base", "small" etc.
-
-# WebSocket Signaling
 @app.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str):
     await websocket.accept()
@@ -38,17 +33,29 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
     finally:
         connected_users.pop(username, None)
 
-# Transcription Endpoint
-# Transcription Endpoint
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     try:
-        with tempfile.NamedTemporaryFile(delete=True, suffix=".webm") as tmp:
-            tmp.write(await file.read())
-            tmp.flush()
-            segments, info = transcribe_file(tmp.name)
-            text = " ".join([seg.text.strip() for seg in segments])
-            print(f"[TRANSCRIBED] {text}")
-            return {"text": text}
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp_in:
+            contents = await file.read()
+            print("📥 Received audio size:", len(contents))
+            tmp_in.write(contents)
+            tmp_in.flush()
+            input_path = tmp_in.name
+            output_path = input_path.replace(".webm", ".wav")
+
+        # Convert .webm → .wav using ffmpeg
+        ffmpeg.input(input_path).output(output_path, ar=16000, ac=1).run(overwrite_output=True)
+
+        # Transcribe with Whisper
+        segments, _ = transcribe_file(output_path)
+        text = " ".join([s.text.strip() for s in segments])
+
+        # Clean up temp files
+        os.remove(input_path)
+        os.remove(output_path)
+
+        print(f"[TRANSCRIBED] {text}")
+        return {"text": text}
     except Exception as e:
         return {"error": str(e)}
