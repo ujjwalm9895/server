@@ -2,5 +2,5 @@ fastapi
 uvicorn
 faster-whisper
 ffmpeg-python
-websockets
-python-multipart
+openai
+python-dotenv
