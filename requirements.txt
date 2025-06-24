@@ -1,4 +1,4 @@
 fastapi
 uvicorn[standard]
 python-dotenv
-openai
+openai==0.28
