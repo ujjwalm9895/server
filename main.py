@@ -5,30 +5,35 @@ from typing import Dict
 from dotenv import load_dotenv
 import openai
 
-# Load OpenAI key
+# 🌍 Load environment variables
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# ✅ Create OpenAI client using API key
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
-# Allow frontend access (CORS)
+# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, limit this to your frontend
+    allow_origins=["*"],  # For production, set to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Track users and their transcript history
+# Track connected users and their transcriptions
 connected_users: Dict[str, WebSocket] = {}
 user_transcripts: Dict[str, str] = {}
 
-# 🔤 Transcribe audio using Whisper (OpenAI)
+# 🔤 Transcription with Whisper
 def transcribe_with_openai(file_path: str) -> str:
     with open(file_path, "rb") as f:
-        transcript = openai.Audio.transcribe("whisper-1", f)
-    return transcript["text"]
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=f
+        )
+    return transcript.text
 
 # 🖼️ Generate image using DALL·E 3
 def generate_image_from_prompt(prompt: str) -> str:
